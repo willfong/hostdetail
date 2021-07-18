@@ -7,8 +7,7 @@ const port = process.env.PORT || 3000;
 app.use(morgan('combined'));
 
 app.get("/", (req, res) => {
-    console.log(req);
-    res.send("Hello");
+    res.json(req.headers);
 });
 
 app.use(function(req, res) {
