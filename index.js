@@ -10,7 +10,7 @@ app.get("/", (req, res) => {
 	res.json({
 		...req.headers,
 		currentTs: new Date(),
-		ip: req.headers["x-real-ip"]?.startsWith("\\") ? req.headers["x-real-ip"].slice(2) : req.headers["x-real-ip"],
+		ip: req.headers["x-real-ip"]?.startsWith("\\") ? req.headers["x-real-ip"].slice(1) : req.headers["x-real-ip"],
 	});
 });
 
