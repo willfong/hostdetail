@@ -7,7 +7,11 @@ const port = process.env.PORT || 3000;
 app.use(morgan("combined"));
 
 app.get("/", (req, res) => {
-	res.json({ ...req.headers, currentTs: new Date() });
+	res.json({
+		...req.headers,
+		currentTs: new Date(),
+		ip: req.headers["x-real-ip"]?.startsWith("\\") ? req.headers["x-real-ip"].slice(2) : req.headers["x-real-ip"],
+	});
 });
 
 app.use(function (req, res) {
@@ -15,6 +19,7 @@ app.use(function (req, res) {
 });
 
 app.use(function (error, req, res, next) {
+	console.log(error);
 	res.status(500).send("500: Internal Server Error");
 });
 
