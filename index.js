@@ -4,13 +4,23 @@ const morgan = require("morgan");
 const app = express();
 const port = process.env.PORT || 3000;
 
+const dns = require("dns");
+
 app.use(morgan("combined"));
 
-app.get("/", (req, res) => {
+app.get("/", async (req, res) => {
+	const ip = req.headers["x-real-ip"]?.startsWith("\\") ? req.headers["x-real-ip"].slice(1) : req.headers["x-real-ip"];
+	let reverseLookup;
+	try {
+		reverseLookup = await reverseDns("13.212.158.216");
+	} catch (err) {
+		// Do nothing
+	}
 	res.json({
 		...req.headers,
 		currentTs: new Date(),
-		ip: req.headers["x-real-ip"]?.startsWith("\\") ? req.headers["x-real-ip"].slice(1) : req.headers["x-real-ip"],
+		ip,
+		reverseLookup,
 	});
 });
 
@@ -26,3 +36,15 @@ app.use(function (error, req, res, next) {
 app.listen(port, () => {
 	console.log(`Service started on port: ${port}`);
 });
+
+async function reverseDns(ip) {
+	return new Promise((resolve, reject) => {
+		dns.reverse(ip, (err, address, family) => {
+			if (err) {
+				reject(err);
+			} else {
+				resolve(address[0]);
+			}
+		});
+	});
+}
