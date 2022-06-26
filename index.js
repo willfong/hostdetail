@@ -12,7 +12,7 @@ app.get("/", async (req, res) => {
 	const ip = req.headers["x-real-ip"]?.startsWith("\\") ? req.headers["x-real-ip"].slice(1) : req.headers["x-real-ip"];
 	let reverseLookup;
 	try {
-		reverseLookup = await reverseDns("13.212.158.216");
+		reverseLookup = await reverseDns(ip);
 	} catch (err) {
 		// Do nothing
 	}
