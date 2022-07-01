@@ -6,10 +6,15 @@ const port = process.env.PORT || 3000;
 
 const dns = require("dns");
 
+let user_agents = {};
+
 app.use(morgan("combined"));
 
 app.get("/", async (req, res) => {
 	const ip = req.headers["x-real-ip"]?.startsWith("\\") ? req.headers["x-real-ip"].slice(1) : req.headers["x-real-ip"];
+	const ua = req.headers["user-agent"];
+	if (!user_agents[ua]) user_agents[ua] = 0;
+	user_agents[ua]++;
 	let reverseLookup;
 	try {
 		reverseLookup = await reverseDns(ip);
@@ -22,6 +27,10 @@ app.get("/", async (req, res) => {
 		ip,
 		reverseLookup,
 	});
+});
+
+app.get("/user-agents", (req, res) => {
+	res.send(user_agents);
 });
 
 app.use(function (req, res) {
