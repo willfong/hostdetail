@@ -33,6 +33,10 @@ app.get("/user-agents", (req, res) => {
 	res.send(user_agents);
 });
 
+app.get("/alb-health-check", (req, res) => {
+	res.send("ok");
+});
+
 app.use(function (req, res) {
 	res.status(404).send("404: Page not Found");
 });
