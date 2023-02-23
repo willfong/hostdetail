@@ -8,7 +8,8 @@
 	"scripts": {
 		"start": "node index.js",
 		"dev": "nodemon index.js",
-		"deploy": "AWS_REGION=ap-southeast-1 AWS_PROFILE=davao aws ecs update-service --cluster default --service HostDetail --force-new-deployment"
+		"deploy": "AWS_REGION=ap-southeast-1 AWS_PROFILE=davao aws ecs update-service --cluster default --service HostDetail --force-new-deployment",
+		"logs": "AWS_REGION=ap-southeast-1 AWS_PROFILE=davao aws logs tail /ecs/services/hostdetail --since 20m"
 	},
 	"dependencies": {
 		"express": "^4.17.1",
