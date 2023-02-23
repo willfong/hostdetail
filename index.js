@@ -11,7 +11,13 @@ let user_agents = {};
 app.use(morgan("combined"));
 
 app.get("/", async (req, res) => {
-	const ip = req.headers["x-real-ip"]?.startsWith("\\") ? req.headers["x-real-ip"].slice(1) : req.headers["x-real-ip"];
+	// ALB uses x-forwarded-for
+	// nginx uses x-real-ip
+	const ip =
+		req.headers["x-forwarded-for"] ?? req.headers["x-real-ip"]?.startsWith("\\")
+			? req.headers["x-real-ip"].slice(1)
+			: req.headers["x-real-ip"];
+
 	const ua = req.headers["user-agent"];
 	if (!user_agents[ua]) user_agents[ua] = 0;
 	user_agents[ua]++;
