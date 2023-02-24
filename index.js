@@ -13,7 +13,6 @@ app.use(morgan("combined"));
 app.get("/", async (req, res) => {
 	// ALB uses x-forwarded-for
 	// nginx uses x-real-ip
-	console.log(req.headers["x-forwarded-for"]);
 	const ip =
 		req.headers["x-forwarded-for"] ??
 		(req.headers["x-real-ip"].startsWith("\\") ? req.headers["x-real-ip"].slice(1) : req.headers["x-real-ip"]);
