@@ -43,11 +43,11 @@ npm start
 
 ### Docker (Recommended)
 
-The application is designed to run in a secure, read-only container:
+The application is designed to run in a secure, read-only container with multi-architecture support:
 
 ```bash
-# Build image
-docker build -t hostdetail .
+# Pull pre-built ARM64 image from Docker Hub
+docker pull wfong/b1n:latest
 
 # Run with security best practices
 docker run \
@@ -60,7 +60,20 @@ docker run \
   -p 3000:3000 \
   -d \
   --name hostdetail \
-  hostdetail
+  wfong/b1n:latest
+```
+
+#### Building from Source
+
+```bash
+# Build for current architecture
+docker build -t hostdetail .
+
+# Build for ARM64 (multi-architecture)
+docker buildx build --platform linux/arm64 -t hostdetail:arm64 .
+
+# Build and push to registry
+docker buildx build --platform linux/arm64 -t your-registry/image:latest --push .
 ```
 
 ### Environment Variables
@@ -89,12 +102,15 @@ npm run aws:deploy-toolist
 
 ## Security Features
 
+- **Multi-stage build** - Optimized build process with reduced attack surface
 - **Read-only filesystem** - Container runs with read-only root filesystem
 - **Non-root user** - Application runs as unprivileged user (UID 1001)
 - **Minimal attack surface** - Alpine-based image with only required packages
-- **Signal handling** - Proper process management with tini init system
+- **Memory optimization** - Node.js heap limited to 128MB for efficient resource usage
+- **Signal handling** - Proper process management with dumb-init system
 - **Input validation** - Handles malformed headers gracefully
 - **Error handling** - Comprehensive error handling and logging
+- **ARM64 support** - Optimized for modern ARM-based infrastructure
 
 ## Contributing
 
