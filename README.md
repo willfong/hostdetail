@@ -7,14 +7,16 @@ A secure Node.js/Express application that displays host and IP address informati
 ## Features
 
 - Real IP address detection (supports ALB and nginx proxy headers)
-- Reverse DNS lookup for IP addresses
-- **IP Geolocation** with detailed location data (country, region, city, ISP, timezone)
+- Reverse DNS lookup for IP addresses with **Redis caching** (30-day TTL)
+- **IP Geolocation** with detailed location data (country, region, city, ISP, timezone) and **Redis caching** (30-day TTL)
+- **Browser detection** with responsive HTML interface for humans, JSON API for automation
 - User agent tracking and analytics
-- Health check endpoints for monitoring
-- **Structured logging with Pino** for observability
+- Health check endpoints for monitoring (`/health` and `/alb-health-check`)
+- **Structured logging with Pino** for observability (cache hits/misses, 3rd party API calls)
 - **Business metrics logging** for monitoring and analytics
 - **Country metrics** for geographic request analytics
-- Secure containerized deployment
+- **Redis-based performance optimization** for fastest response times
+- Secure containerized deployment with Docker Compose
 
 ## Development
 
@@ -22,6 +24,7 @@ A secure Node.js/Express application that displays host and IP address informati
 
 - Node.js 22+
 - npm
+- Redis (for caching - optional for development)
 
 ### Local Setup
 
@@ -34,36 +37,61 @@ npm run dev
 
 # Start production server
 npm start
+
+# Optional: Start with Redis for caching
+docker run -d --name redis -p 6379:6379 redis:7-alpine
+REDIS_URL=redis://localhost:6379 npm start
 ```
 
 ### API Endpoints
 
-- `GET /` - Returns client IP, headers, reverse DNS lookup, and geolocation data
+- `GET /` - Returns client IP, headers, reverse DNS lookup, and geolocation data (HTML for browsers, JSON for APIs)
 - `GET /user-agents` - Returns user agent analytics
-- `GET /alb-health-check` - Health check endpoint
+- `GET /health` - Efficient health check endpoint (200 OK)
+- `GET /alb-health-check` - Legacy health check endpoint
 - `GET /*` - 404 handler for undefined routes
 
 ## Production Deployment
 
-### Docker (Recommended)
+### Docker Compose (Recommended)
 
-The application is designed to run in a secure, read-only container with multi-architecture support:
+The application includes a complete Docker Compose setup with Redis caching for optimal performance:
+
+```bash
+# Start the complete stack (hostdetail + Redis)
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop the stack
+docker-compose down
+```
+
+### Standalone Docker (without Redis caching)
 
 ```bash
 # Pull pre-built multi-arch image from Docker Hub
 docker pull wfong/hostdetail:latest
 
-# Run with security best practices
-docker run \
-  --restart=unless-stopped \
+# Run with security best practices (same as your original setup)
+docker run -d --name hostdetail \
+  -p 127.0.0.1:5004:3000 \
+  --user 10000:10000 \
   --read-only \
-  --tmpfs /tmp \
-  --user 1001:1001 \
-  --cap-drop=ALL \
-  --security-opt=no-new-privileges:true \
-  -p 3000:3000 \
-  -d \
-  --name hostdetail \
+  --tmpfs /tmp:rw,nosuid,nodev,noexec,size=32m \
+  --tmpfs /run:rw,nosuid,nodev,noexec,size=16m \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  --security-opt label=type:container_t \
+  --pids-limit 200 \
+  --ulimit nofile=65536:65536 \
+  --ulimit nproc=4096:4096 \
+  --memory=128m --memory-swap=128m \
+  --cpus=".25" \
+  --health-cmd='wget --user-agent="DockerHealthCheck" -qO- http://127.0.0.1:3000/health || exit 1' \
+  --health-interval=20s --health-retries=3 --health-timeout=3s \
+  --restart unless-stopped \
   wfong/hostdetail:latest
 ```
 
@@ -87,6 +115,8 @@ docker buildx build --platform linux/amd64,linux/arm64 -t wfong/hostdetail:lates
 - `LOG_LEVEL` - Logging level: debug, info, warn, error (default: info)
 - `SERVICE_VERSION` - Service version for tracking (default: 1.0.0)
 - `HOSTNAME` - Host identifier for logs (auto-detected if not set)
+- `REDIS_URL` - Redis connection URL (default: redis://localhost:6379)
+- `CACHE_TTL_DAYS` - Cache TTL in days for DNS and geolocation (default: 30)
 
 ## Monitoring & Observability
 
@@ -104,6 +134,13 @@ All logs include structured data with these event types:
 - **`dns_lookup_success`/`dns_lookup_failure`** - Reverse DNS performance and errors
 - **`geolocation_lookup_success`/`geolocation_lookup_failure`** - IP geolocation API performance and errors
 - **`country_metrics`** - Geographic request distribution by country/region/city
+- **`cache_hit`/`cache_miss`/`cache_set`** - Redis cache performance and statistics
+- **`cache_parse_error`** - Redis cache data parsing errors
+- **`third_party_api_request`/`third_party_api_success`/`third_party_api_error`** - External API call tracking
+- **`third_party_api_failure`/`third_party_api_timeout`** - API-specific failures and timeouts
+- **`redis_connected`/`redis_connection_error`/`redis_connection_failed`** - Redis connection status
+- **`redis_get_error`/`redis_set_error`** - Redis operation errors
+- **`ip_detection_failure`** - IP detection failures with debugging context
 - **`request_performance`** - Request timing, DNS lookup, and geolocation performance
 - **`user_agents_endpoint_accessed`** - Analytics endpoint usage
 - **`route_not_found`** - 404 errors with context
@@ -112,8 +149,10 @@ All logs include structured data with these event types:
 
 #### Business Metrics Tracked
 
-- **Performance**: Request times, DNS lookup duration, geolocation API response times
+- **Performance**: Request times, DNS lookup duration, geolocation API response times, cache hit rates
 - **Geographic**: Country/region/city distribution, ISP analytics, timezone patterns
+- **Caching**: Cache hit/miss ratios, cache performance, Redis connection health
+- **Third-party APIs**: External API call success rates, response times, error tracking
 - **Security**: IP detection methods, proxy usage patterns
 - **Usage**: User agent diversity, endpoint access patterns
 - **System Health**: Memory usage, uptime, error rates
@@ -164,6 +203,18 @@ count by (country, region, city) ({service="hostdetail"} | json | event="country
 
 # ISP distribution
 count by (isp) ({service="hostdetail"} | json | event="geolocation_lookup_success")
+
+# Cache hit rate
+rate({service="hostdetail"} | json | event="cache_hit" [5m]) / rate({service="hostdetail"} | json | event=~"cache_(hit|miss)" [5m])
+
+# Cache performance by type
+count by (cacheType) ({service="hostdetail"} | json | event=~"cache_(hit|miss)")
+
+# Third-party API performance
+{service="hostdetail"} | json | event="third_party_api_success" | unwrap requestDurationMs
+
+# Redis connection health
+{service="hostdetail"} | json | event=~"redis_.*"
 
 # User agent diversity
 count by (userAgent) ({service="hostdetail"} | json | event="user_agent_tracking")

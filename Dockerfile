@@ -29,9 +29,9 @@ RUN apk update && apk upgrade && apk add --no-cache \
     curl && \
     rm -rf /var/cache/apk/* /tmp/* /var/tmp/*
 
-# Create non-root user with specific UID/GID
-RUN addgroup -g 1001 -S appuser && \
-    adduser -S appuser -u 1001 -G appuser
+# Create non-root user with specific UID/GID matching security requirements
+RUN addgroup -g 10000 -S appuser && \
+    adduser -S appuser -u 10000 -G appuser
 
 # Set working directory
 WORKDIR /app
@@ -65,9 +65,9 @@ ENV NODE_ENV=production \
 # Expose port
 EXPOSE 3000
 
-# Health check with curl instead of wget for better error handling
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:3000/alb-health-check || exit 1
+# Health check using the efficient endpoint
+HEALTHCHECK --interval=20s --timeout=3s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:3000/health || exit 1
 
 # Use dumb-init for proper signal handling and process management
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]

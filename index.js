@@ -1,6 +1,7 @@
 const express = require("express");
 const pino = require("pino");
 const pinoHttp = require("pino-http");
+const redis = require("redis");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -85,6 +86,80 @@ const httpLogger = pinoHttp({
 
 app.use(httpLogger);
 
+// Redis client setup
+const redisClient = redis.createClient({
+	url: process.env.REDIS_URL || 'redis://localhost:6379',
+	socket: {
+		connectTimeout: 5000,
+		commandTimeout: 2000,
+		reconnectDelayOnFailover: 100,
+		reconnectDelayOnClusterDown: 100,
+		maxRetriesPerRequest: 3
+	},
+	retryDelayOnFailover: 100,
+	retryDelayOnClusterDown: 100,
+	maxRetriesPerRequest: 3,
+	lazyConnect: true
+});
+
+// Redis error handling
+redisClient.on('error', (err) => {
+	logger.warn({
+		event: 'redis_connection_error',
+		error: err.message
+	}, 'Redis connection error - continuing without cache');
+});
+
+redisClient.on('connect', () => {
+	logger.info({
+		event: 'redis_connected'
+	}, 'Redis cache connected successfully');
+});
+
+// Connect to Redis (non-blocking)
+redisClient.connect().catch(err => {
+	logger.warn({
+		event: 'redis_connection_failed',
+		error: err.message
+	}, 'Failed to connect to Redis - continuing without cache');
+});
+
+// Cache configuration - configurable via environment variables
+const CACHE_TTL = {
+	DNS: parseInt(process.env.CACHE_TTL_DAYS || '30') * 24 * 60 * 60, // Default 30 days for DNS
+	GEO: parseInt(process.env.CACHE_TTL_DAYS || '30') * 24 * 60 * 60  // Default 30 days for geolocation
+};
+
+// Helper function to safely interact with Redis
+async function getFromCache(key) {
+	try {
+		if (!redisClient.isReady) return null;
+		return await redisClient.get(key);
+	} catch (err) {
+		logger.warn({
+			event: 'redis_get_error',
+			key,
+			error: err.message
+		}, 'Redis GET failed');
+		return null;
+	}
+}
+
+async function setCache(key, value, ttl) {
+	try {
+		if (!redisClient.isReady) return false;
+		await redisClient.setEx(key, ttl, JSON.stringify(value));
+		return true;
+	} catch (err) {
+		logger.warn({
+			event: 'redis_set_error',
+			key,
+			error: err.message
+		}, 'Redis SET failed');
+		return false;
+	}
+}
+
 // Function to detect if request is from a browser
 function isBrowserRequest(userAgent) {
 	if (!userAgent) return false;
@@ -146,9 +221,9 @@ function generateHTML(data) {
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
             min-height: 100vh;
-            color: #333;
+            color: #2c3e50;
             line-height: 1.6;
         }
         .container {
@@ -169,13 +244,13 @@ function generateHTML(data) {
             margin-bottom: 30px;
         }
         .header h1 {
-            color: #4a5568;
+            color: #8d6e63;
             font-size: 2.5em;
             margin-bottom: 10px;
         }
         .ip-display {
             font-size: 2em;
-            color: #667eea;
+            color: #2c3e50;
             font-weight: bold;
             margin: 10px 0;
         }
@@ -186,22 +261,22 @@ function generateHTML(data) {
             margin: 20px 0;
         }
         .info-item {
-            background: #f7fafc;
+            background: #f5f5f5;
             padding: 15px;
             border-radius: 8px;
-            border-left: 4px solid #667eea;
+            border-left: 4px solid #8d6e63;
         }
         .info-label {
             font-weight: 600;
-            color: #4a5568;
+            color: #5d4037;
             margin-bottom: 5px;
         }
         .info-value {
-            color: #2d3748;
+            color: #2c3e50;
             word-break: break-all;
         }
         .geo-section {
-            background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+            background: linear-gradient(135deg, #8d6e63 0%, #5d4037 100%);
             color: white;
             border-radius: 8px;
             padding: 20px;
@@ -210,7 +285,7 @@ function generateHTML(data) {
         .geo-section h3 { margin-bottom: 15px; }
         .timestamp {
             text-align: center;
-            color: #718096;
+            color: #6d7278;
             font-size: 0.9em;
             margin-top: 20px;
         }
@@ -228,7 +303,7 @@ function generateHTML(data) {
             <div class="header">
                 <h1>🌐 Host Detail</h1>
                 <div class="ip-display">${ip || 'Unknown'}</div>
-                ${reverseLookup ? `<div style="color: #718096;">→ ${reverseLookup}</div>` : ''}
+                ${reverseLookup ? `<div style="color: #6d7278;">→ ${reverseLookup}</div>` : ''}
             </div>
 
             ${geolocation ? `
@@ -366,15 +441,18 @@ app.get("/", async (req, res) => {
 	if (ip) {
 		const dnsStart = Date.now();
 		try {
-			reverseLookup = await reverseDns(ip);
+			reverseLookup = await reverseDnsWithCache(ip);
 			dnsLookupTime = Date.now() - dnsStart;
 
-			logger.info({
-				event: 'dns_lookup_success',
-				clientIp: ip,
-				reverseDns: reverseLookup,
-				lookupTimeMs: dnsLookupTime
-			}, 'DNS reverse lookup successful');
+			if (reverseLookup) {
+				logger.info({
+					event: 'dns_lookup_success',
+					clientIp: ip,
+					reverseDns: reverseLookup,
+					lookupTimeMs: dnsLookupTime,
+					fromCache: dnsLookupTime < 10 // Likely from cache if very fast
+				}, 'DNS reverse lookup successful');
+			}
 		} catch (err) {
 			dnsLookupTime = Date.now() - dnsStart;
 
@@ -389,29 +467,32 @@ app.get("/", async (req, res) => {
 		// Geolocation lookup with timeout
 		const geoStart = Date.now();
 		try {
-			geolocation = await getGeolocation(ip);
+			geolocation = await getGeolocationWithCache(ip);
 			geoLookupTime = Date.now() - geoStart;
 
-			logger.info({
-				event: 'geolocation_lookup_success',
-				clientIp: ip,
-				country: geolocation.country,
-				countryCode: geolocation.countryCode,
-				region: geolocation.regionName,
-				city: geolocation.city,
-				isp: geolocation.isp,
-				lookupTimeMs: geoLookupTime
-			}, `Geolocation lookup successful for ${geolocation.country}`);
+			if (geolocation) {
+				logger.info({
+					event: 'geolocation_lookup_success',
+					clientIp: ip,
+					country: geolocation.country,
+					countryCode: geolocation.countryCode,
+					region: geolocation.regionName,
+					city: geolocation.city,
+					isp: geolocation.isp,
+					lookupTimeMs: geoLookupTime,
+					fromCache: geoLookupTime < 10 // Likely from cache if very fast
+				}, `Geolocation lookup successful for ${geolocation.country}`);
 
-			// Log country metrics for Grafana
-			logger.info({
-				event: 'country_metrics',
-				country: geolocation.country,
-				countryCode: geolocation.countryCode,
-				region: geolocation.regionName,
-				city: geolocation.city,
-				clientIp: ip
-			}, `Request from ${geolocation.country}`);
+				// Log country metrics for Grafana
+				logger.info({
+					event: 'country_metrics',
+					country: geolocation.country,
+					countryCode: geolocation.countryCode,
+					region: geolocation.regionName,
+					city: geolocation.city,
+					clientIp: ip
+				}, `Request from ${geolocation.country}`);
+			}
 		} catch (err) {
 			geoLookupTime = Date.now() - geoStart;
 
@@ -489,6 +570,11 @@ app.get("/alb-health-check", (req, res) => {
 	res.send("ok");
 });
 
+// More efficient health check endpoint
+app.get("/health", (req, res) => {
+	res.status(200).end();
+});
+
 app.use(function (req, res) {
 	logger.warn({
 		event: 'route_not_found',
@@ -564,33 +650,209 @@ async function reverseDns(ip) {
 	});
 }
 
+// Cached version of reverse DNS lookup
+async function reverseDnsWithCache(ip) {
+	const cacheKey = `dns:${ip}`;
+
+	// Try cache first
+	const cached = await getFromCache(cacheKey);
+	if (cached) {
+		try {
+			const result = JSON.parse(cached);
+			logger.info({
+				event: 'cache_hit',
+				cacheType: 'dns',
+				clientIp: ip,
+				cacheKey,
+				result
+			}, 'DNS cache hit');
+			return result;
+		} catch (err) {
+			logger.warn({
+				event: 'cache_parse_error',
+				cacheType: 'dns',
+				key: cacheKey,
+				error: err.message
+			}, 'Failed to parse cached DNS result');
+		}
+	}
+
+	// Cache miss, perform lookup
+	logger.info({
+		event: 'cache_miss',
+		cacheType: 'dns',
+		clientIp: ip,
+		cacheKey
+	}, 'DNS cache miss - performing lookup');
+
+	const result = await reverseDns(ip);
+	if (result) {
+		const cached = await setCache(cacheKey, result, CACHE_TTL.DNS);
+		logger.info({
+			event: 'cache_set',
+			cacheType: 'dns',
+			clientIp: ip,
+			cacheKey,
+			result,
+			ttl: CACHE_TTL.DNS,
+			cached
+		}, 'DNS result cached');
+	}
+
+	return result;
+}
+
+// Cached version of geolocation lookup
+async function getGeolocationWithCache(ip) {
+	const cacheKey = `geo:${ip}`;
+
+	// Try cache first
+	const cached = await getFromCache(cacheKey);
+	if (cached) {
+		try {
+			const result = JSON.parse(cached);
+			logger.info({
+				event: 'cache_hit',
+				cacheType: 'geolocation',
+				clientIp: ip,
+				cacheKey,
+				country: result.country,
+				countryCode: result.countryCode,
+				region: result.regionName,
+				city: result.city
+			}, 'Geolocation cache hit');
+			return result;
+		} catch (err) {
+			logger.warn({
+				event: 'cache_parse_error',
+				cacheType: 'geolocation',
+				key: cacheKey,
+				error: err.message
+			}, 'Failed to parse cached geolocation result');
+		}
+	}
+
+	// Cache miss, perform lookup
+	logger.info({
+		event: 'cache_miss',
+		cacheType: 'geolocation',
+		clientIp: ip,
+		cacheKey
+	}, 'Geolocation cache miss - performing API request');
+
+	const result = await getGeolocation(ip);
+	if (result) {
+		const cached = await setCache(cacheKey, result, CACHE_TTL.GEO);
+		logger.info({
+			event: 'cache_set',
+			cacheType: 'geolocation',
+			clientIp: ip,
+			cacheKey,
+			country: result.country,
+			countryCode: result.countryCode,
+			region: result.regionName,
+			city: result.city,
+			ttl: CACHE_TTL.GEO,
+			cached
+		}, 'Geolocation result cached');
+	}
+
+	return result;
+}
+
 async function getGeolocation(ip) {
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout
+	const apiUrl = `http://ip-api.com/json/${ip}`;
+	const requestStart = Date.now();
+
+	logger.info({
+		event: 'third_party_api_request',
+		apiProvider: 'ip-api.com',
+		apiUrl,
+		clientIp: ip,
+		requestType: 'geolocation'
+	}, 'Making geolocation API request');
 
 	try {
-		const response = await fetch(`http://ip-api.com/json/${ip}`, {
+		const response = await fetch(apiUrl, {
 			signal: controller.signal
 		});
 
 		clearTimeout(timeoutId);
+		const requestDuration = Date.now() - requestStart;
 
 		if (!response.ok) {
+			logger.warn({
+				event: 'third_party_api_error',
+				apiProvider: 'ip-api.com',
+				apiUrl,
+				clientIp: ip,
+				requestType: 'geolocation',
+				httpStatus: response.status,
+				httpStatusText: response.statusText,
+				requestDurationMs: requestDuration
+			}, `Geolocation API HTTP error: ${response.status}`);
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
 		const data = await response.json();
 
 		if (data.status === 'fail') {
+			logger.warn({
+				event: 'third_party_api_failure',
+				apiProvider: 'ip-api.com',
+				apiUrl,
+				clientIp: ip,
+				requestType: 'geolocation',
+				apiResponse: data,
+				requestDurationMs: requestDuration
+			}, `Geolocation API failure: ${data.message || 'Unknown error'}`);
 			throw new Error(data.message || 'Geolocation lookup failed');
 		}
+
+		logger.info({
+			event: 'third_party_api_success',
+			apiProvider: 'ip-api.com',
+			apiUrl,
+			clientIp: ip,
+			requestType: 'geolocation',
+			country: data.country,
+			countryCode: data.countryCode,
+			region: data.regionName,
+			city: data.city,
+			isp: data.isp,
+			requestDurationMs: requestDuration
+		}, 'Geolocation API request successful');
 
 		return data;
 	} catch (error) {
 		clearTimeout(timeoutId);
+		const requestDuration = Date.now() - requestStart;
+
 		if (error.name === 'AbortError') {
+			logger.warn({
+				event: 'third_party_api_timeout',
+				apiProvider: 'ip-api.com',
+				apiUrl,
+				clientIp: ip,
+				requestType: 'geolocation',
+				timeoutMs: 2000,
+				requestDurationMs: requestDuration
+			}, 'Geolocation API request timeout');
 			throw new Error('Geolocation lookup timeout (2s)');
 		}
+
+		logger.error({
+			event: 'third_party_api_error',
+			apiProvider: 'ip-api.com',
+			apiUrl,
+			clientIp: ip,
+			requestType: 'geolocation',
+			error: error.message,
+			requestDurationMs: requestDuration
+		}, `Geolocation API request failed: ${error.message}`);
+
 		throw error;
 	}
 }
