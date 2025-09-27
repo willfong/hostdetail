@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   hostdetail:
     image: wfong/hostdetail:latest
@@ -19,12 +17,12 @@ services:
       nproc:
         soft: 4096
         hard: 4096
-    pids_limit: 200
     deploy:
       resources:
         limits:
           memory: 128M
           cpus: '0.25'
+          pids: 200
         reservations:
           memory: 64M
           cpus: '0.1'
@@ -64,12 +62,12 @@ services:
     cap_add:
       - SETGID
       - SETUID
-    pids_limit: 100
     deploy:
       resources:
         limits:
           memory: 64M
           cpus: '0.1'
+          pids: 100
         reservations:
           memory: 32M
           cpus: '0.05'
