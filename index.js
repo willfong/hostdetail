@@ -85,6 +85,212 @@ const httpLogger = pinoHttp({
 
 app.use(httpLogger);
 
+// Function to detect if request is from a browser
+function isBrowserRequest(userAgent) {
+	if (!userAgent) return false;
+
+	const browserPatterns = [
+		/mozilla/i,
+		/chrome/i,
+		/safari/i,
+		/firefox/i,
+		/edge/i,
+		/opera/i,
+		/webkit/i
+	];
+
+	// Exclude common non-browser user agents
+	const nonBrowserPatterns = [
+		/curl/i,
+		/wget/i,
+		/python/i,
+		/node/i,
+		/java/i,
+		/go-http/i,
+		/postman/i,
+		/insomnia/i,
+		/httpie/i,
+		/bot/i,
+		/spider/i,
+		/crawler/i
+	];
+
+	// Check if it's a non-browser first
+	for (const pattern of nonBrowserPatterns) {
+		if (pattern.test(userAgent)) {
+			return false;
+		}
+	}
+
+	// Check if it matches browser patterns
+	for (const pattern of browserPatterns) {
+		if (pattern.test(userAgent)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+// Function to generate HTML response
+function generateHTML(data) {
+	const { ip, reverseLookup, geolocation, currentTs } = data;
+
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Host Detail - IP Information</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .card {
+            background: rgba(255,255,255,0.95);
+            border-radius: 12px;
+            padding: 30px;
+            margin: 20px 0;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            backdrop-filter: blur(10px);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #4a5568;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        .ip-display {
+            font-size: 2em;
+            color: #667eea;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .info-item {
+            background: #f7fafc;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        .info-label {
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 5px;
+        }
+        .info-value {
+            color: #2d3748;
+            word-break: break-all;
+        }
+        .geo-section {
+            background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+            color: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .geo-section h3 { margin-bottom: 15px; }
+        .timestamp {
+            text-align: center;
+            color: #718096;
+            font-size: 0.9em;
+            margin-top: 20px;
+        }
+        @media (max-width: 600px) {
+            .container { padding: 10px; }
+            .card { padding: 20px; }
+            .header h1 { font-size: 2em; }
+            .ip-display { font-size: 1.5em; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="header">
+                <h1>🌐 Host Detail</h1>
+                <div class="ip-display">${ip || 'Unknown'}</div>
+                ${reverseLookup ? `<div style="color: #718096;">→ ${reverseLookup}</div>` : ''}
+            </div>
+
+            ${geolocation ? `
+            <div class="geo-section">
+                <h3>📍 Geographic Information</h3>
+                <div class="info-grid">
+                    <div>
+                        <div class="info-label">Country</div>
+                        <div class="info-value">${geolocation.country} (${geolocation.countryCode})</div>
+                    </div>
+                    <div>
+                        <div class="info-label">Region</div>
+                        <div class="info-value">${geolocation.regionName}</div>
+                    </div>
+                    <div>
+                        <div class="info-label">City</div>
+                        <div class="info-value">${geolocation.city}</div>
+                    </div>
+                    <div>
+                        <div class="info-label">Timezone</div>
+                        <div class="info-value">${geolocation.timezone}</div>
+                    </div>
+                    <div>
+                        <div class="info-label">ISP</div>
+                        <div class="info-value">${geolocation.isp}</div>
+                    </div>
+                    <div>
+                        <div class="info-label">Coordinates</div>
+                        <div class="info-value">${geolocation.lat}, ${geolocation.lon}</div>
+                    </div>
+                </div>
+            </div>
+            ` : ''}
+
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">User Agent</div>
+                    <div class="info-value">${data['user-agent'] || 'Unknown'}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Host</div>
+                    <div class="info-value">${data.host || 'Unknown'}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Accept</div>
+                    <div class="info-value">${data.accept || 'Unknown'}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Connection</div>
+                    <div class="info-value">${data.connection || 'Unknown'}</div>
+                </div>
+            </div>
+
+            <div class="timestamp">
+                Last updated: ${new Date(currentTs).toLocaleString()}
+            </div>
+        </div>
+    </div>
+</body>
+</html>`;
+}
+
 app.get("/", async (req, res) => {
 	const startTime = Date.now();
 
@@ -131,11 +337,15 @@ app.get("/", async (req, res) => {
 	if (!user_agents[ua]) user_agents[ua] = 0;
 	user_agents[ua]++;
 
+	// Check if this is a browser request
+	const isBrowser = isBrowserRequest(ua);
+
 	// Log user agent metrics
 	logger.info({
 		event: 'user_agent_tracking',
 		userAgent: ua,
 		isNewUserAgent,
+		isBrowserRequest: isBrowser,
 		totalOccurrences: user_agents[ua],
 		totalUniqueUserAgents: Object.keys(user_agents).length
 	}, 'User agent tracked');
@@ -150,6 +360,9 @@ app.get("/", async (req, res) => {
 
 	let reverseLookup;
 	let dnsLookupTime = null;
+	let geolocation = null;
+	let geoLookupTime = null;
+
 	if (ip) {
 		const dnsStart = Date.now();
 		try {
@@ -172,6 +385,43 @@ app.get("/", async (req, res) => {
 				error: err.message
 			}, 'DNS reverse lookup failed');
 		}
+
+		// Geolocation lookup with timeout
+		const geoStart = Date.now();
+		try {
+			geolocation = await getGeolocation(ip);
+			geoLookupTime = Date.now() - geoStart;
+
+			logger.info({
+				event: 'geolocation_lookup_success',
+				clientIp: ip,
+				country: geolocation.country,
+				countryCode: geolocation.countryCode,
+				region: geolocation.regionName,
+				city: geolocation.city,
+				isp: geolocation.isp,
+				lookupTimeMs: geoLookupTime
+			}, `Geolocation lookup successful for ${geolocation.country}`);
+
+			// Log country metrics for Grafana
+			logger.info({
+				event: 'country_metrics',
+				country: geolocation.country,
+				countryCode: geolocation.countryCode,
+				region: geolocation.regionName,
+				city: geolocation.city,
+				clientIp: ip
+			}, `Request from ${geolocation.country}`);
+		} catch (err) {
+			geoLookupTime = Date.now() - geoStart;
+
+			logger.warn({
+				event: 'geolocation_lookup_failure',
+				clientIp: ip,
+				lookupTimeMs: geoLookupTime,
+				error: err.message
+			}, 'Geolocation lookup failed');
+		}
 	}
 
 	// If IP still not found, include all headers for debugging
@@ -180,6 +430,7 @@ app.get("/", async (req, res) => {
 		currentTs: new Date(),
 		ip,
 		reverseLookup,
+		geolocation,
 	};
 
 	if (!ip) {
@@ -204,11 +455,21 @@ app.get("/", async (req, res) => {
 		event: 'request_performance',
 		totalRequestTimeMs: totalRequestTime,
 		dnsLookupTimeMs: dnsLookupTime,
+		geoLookupTimeMs: geoLookupTime,
 		clientIp: ip,
-		hasReverseDns: !!reverseLookup
+		hasReverseDns: !!reverseLookup,
+		hasGeolocation: !!geolocation,
+		isBrowserRequest: isBrowser,
+		responseFormat: isBrowser ? 'html' : 'json'
 	}, 'Request processing completed');
 
-	res.json(response);
+	// Return HTML for browsers, JSON for everything else
+	if (isBrowser) {
+		res.setHeader('Content-Type', 'text/html');
+		res.send(generateHTML(response));
+	} else {
+		res.json(response);
+	}
 });
 
 app.get("/user-agents", (req, res) => {
@@ -301,4 +562,35 @@ async function reverseDns(ip) {
 			}
 		});
 	});
+}
+
+async function getGeolocation(ip) {
+	const controller = new AbortController();
+	const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout
+
+	try {
+		const response = await fetch(`http://ip-api.com/json/${ip}`, {
+			signal: controller.signal
+		});
+
+		clearTimeout(timeoutId);
+
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+		}
+
+		const data = await response.json();
+
+		if (data.status === 'fail') {
+			throw new Error(data.message || 'Geolocation lookup failed');
+		}
+
+		return data;
+	} catch (error) {
+		clearTimeout(timeoutId);
+		if (error.name === 'AbortError') {
+			throw new Error('Geolocation lookup timeout (2s)');
+		}
+		throw error;
+	}
 }

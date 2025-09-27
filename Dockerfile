@@ -1,5 +1,5 @@
 # Multi-stage build for optimal size and security
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache python3 make g++
@@ -21,7 +21,7 @@ RUN npm prune --omit=dev && \
     npm cache clean --force
 
 # Production stage
-FROM node:20-alpine AS production
+FROM node:22-alpine AS production
 
 # Install runtime dependencies and security updates
 RUN apk update && apk upgrade && apk add --no-cache \

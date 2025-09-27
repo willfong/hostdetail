@@ -1,8 +1,8 @@
 {
-	"name": "hostdetails",
+	"name": "hostdetail",
 	"version": "1.0.0",
 	"main": "index.js",
-	"repository": "git@github.com:willfong/hostdetails.git",
+	"repository": "git@github.com:willfong/hostdetail.git",
 	"author": "Will Fong <willfong@hey.com>",
 	"license": "MIT",
 	"scripts": {
@@ -20,5 +20,8 @@
 	},
 	"devDependencies": {
 		"nodemon": "^3.0.0"
+	},
+	"engines": {
+		"node": ">=22.0.0"
 	}
 }

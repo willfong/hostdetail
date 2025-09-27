@@ -8,17 +8,19 @@ A secure Node.js/Express application that displays host and IP address informati
 
 - Real IP address detection (supports ALB and nginx proxy headers)
 - Reverse DNS lookup for IP addresses
+- **IP Geolocation** with detailed location data (country, region, city, ISP, timezone)
 - User agent tracking and analytics
 - Health check endpoints for monitoring
 - **Structured logging with Pino** for observability
 - **Business metrics logging** for monitoring and analytics
+- **Country metrics** for geographic request analytics
 - Secure containerized deployment
 
 ## Development
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 22+
 - npm
 
 ### Local Setup
@@ -36,7 +38,7 @@ npm start
 
 ### API Endpoints
 
-- `GET /` - Returns client IP, headers, and reverse DNS lookup
+- `GET /` - Returns client IP, headers, reverse DNS lookup, and geolocation data
 - `GET /user-agents` - Returns user agent analytics
 - `GET /alb-health-check` - Health check endpoint
 - `GET /*` - 404 handler for undefined routes
@@ -48,8 +50,8 @@ npm start
 The application is designed to run in a secure, read-only container with multi-architecture support:
 
 ```bash
-# Pull pre-built ARM64 image from Docker Hub
-docker pull wfong/b1n:latest
+# Pull pre-built multi-arch image from Docker Hub
+docker pull wfong/hostdetail:latest
 
 # Run with security best practices
 docker run \
@@ -62,7 +64,7 @@ docker run \
   -p 3000:3000 \
   -d \
   --name hostdetail \
-  wfong/b1n:latest
+  wfong/hostdetail:latest
 ```
 
 #### Building from Source
@@ -71,11 +73,11 @@ docker run \
 # Build for current architecture
 docker build -t hostdetail .
 
-# Build for ARM64 (multi-architecture)
-docker buildx build --platform linux/arm64 -t hostdetail:arm64 .
+# Build for multiple architectures (amd64 and arm64)
+docker buildx build --platform linux/amd64,linux/arm64 -t hostdetail .
 
-# Build and push to registry
-docker buildx build --platform linux/arm64 -t your-registry/image:latest --push .
+# Build and push to registry with multi-arch support
+docker buildx build --platform linux/amd64,linux/arm64 -t wfong/hostdetail:latest --push .
 ```
 
 ### Environment Variables
@@ -100,7 +102,9 @@ All logs include structured data with these event types:
 - **`user_agent_tracking`** - New/returning user agents with occurrence counts
 - **`ip_detection`** - Client IP source detection (proxy headers vs direct connection)
 - **`dns_lookup_success`/`dns_lookup_failure`** - Reverse DNS performance and errors
-- **`request_performance`** - Request timing and DNS lookup performance
+- **`geolocation_lookup_success`/`geolocation_lookup_failure`** - IP geolocation API performance and errors
+- **`country_metrics`** - Geographic request distribution by country/region/city
+- **`request_performance`** - Request timing, DNS lookup, and geolocation performance
 - **`user_agents_endpoint_accessed`** - Analytics endpoint usage
 - **`route_not_found`** - 404 errors with context
 - **`server_error`** - 500 errors with full stack traces
@@ -108,7 +112,8 @@ All logs include structured data with these event types:
 
 #### Business Metrics Tracked
 
-- **Performance**: Request times, DNS lookup duration
+- **Performance**: Request times, DNS lookup duration, geolocation API response times
+- **Geographic**: Country/region/city distribution, ISP analytics, timezone patterns
 - **Security**: IP detection methods, proxy usage patterns
 - **Usage**: User agent diversity, endpoint access patterns
 - **System Health**: Memory usage, uptime, error rates
@@ -120,16 +125,17 @@ All logs include structured data with these event types:
 {
   "level": "info",
   "time": "2025-01-15T10:30:45.123Z",
-  "event": "user_agent_tracking",
-  "userAgent": "Mozilla/5.0...",
-  "isNewUserAgent": true,
-  "totalOccurrences": 1,
-  "totalUniqueUserAgents": 42,
+  "event": "country_metrics",
+  "country": "United States",
+  "countryCode": "US",
+  "region": "Virginia",
+  "city": "Ashburn",
+  "clientIp": "8.8.8.8",
   "service": "hostdetail",
   "version": "1.0.0",
   "environment": "production",
   "host": "container-xyz",
-  "msg": "User agent tracked"
+  "msg": "Request from United States"
 }
 ```
 
@@ -147,6 +153,18 @@ rate({service="hostdetail"} | json | level="error" [5m])
 # DNS lookup performance
 {service="hostdetail"} | json | event="dns_lookup_success" | unwrap dnsLookupTimeMs
 
+# Geolocation API performance
+{service="hostdetail"} | json | event="geolocation_lookup_success" | unwrap lookupTimeMs
+
+# Request distribution by country
+count by (country) ({service="hostdetail"} | json | event="country_metrics")
+
+# Geographic request heatmap
+count by (country, region, city) ({service="hostdetail"} | json | event="country_metrics")
+
+# ISP distribution
+count by (isp) ({service="hostdetail"} | json | event="geolocation_lookup_success")
+
 # User agent diversity
 count by (userAgent) ({service="hostdetail"} | json | event="user_agent_tracking")
 
@@ -161,7 +179,9 @@ The application includes comprehensive health monitoring:
 - **HTTP request logging** with response times and status codes
 - **Periodic system metrics** for memory, uptime, and business KPIs
 - **Error tracking** with full context and stack traces
-- **Performance monitoring** for DNS lookups and request processing
+- **Performance monitoring** for DNS lookups, geolocation API calls, and request processing
+- **Geographic analytics** with country/region/city distribution tracking
+- **3rd party API monitoring** with timeout handling (2s) and failure logging
 
 ## AWS ECS Deployment
 
