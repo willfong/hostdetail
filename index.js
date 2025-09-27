@@ -283,6 +283,8 @@ function generateHTML(data) {
             margin: 20px 0;
         }
         .geo-section h3 { margin-bottom: 15px; }
+        .geo-section .info-label { color: white; }
+        .geo-section .info-value { color: white; }
         .timestamp {
             text-align: center;
             color: #6b7280;
