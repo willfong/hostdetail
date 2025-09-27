@@ -41,7 +41,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--user-agent=DockerHealthCheck", "-qO-", "http://127.0.0.1:3000/health"]
+      test: ["CMD", "curl", "-f", "-H", "User-Agent: DockerHealthCheck", "http://127.0.0.1:3000/health"]
       interval: 20s
       timeout: 3s
       retries: 3
