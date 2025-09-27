@@ -221,9 +221,9 @@ function generateHTML(data) {
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            background: linear-gradient(135deg, #1e3a8a 0%, #374151 100%);
             min-height: 100vh;
-            color: #2c3e50;
+            color: #1e3a8a;
             line-height: 1.6;
         }
         .container {
@@ -244,13 +244,13 @@ function generateHTML(data) {
             margin-bottom: 30px;
         }
         .header h1 {
-            color: #8d6e63;
+            color: #8b5a2b;
             font-size: 2.5em;
             margin-bottom: 10px;
         }
         .ip-display {
             font-size: 2em;
-            color: #2c3e50;
+            color: #1e3a8a;
             font-weight: bold;
             margin: 10px 0;
         }
@@ -261,22 +261,22 @@ function generateHTML(data) {
             margin: 20px 0;
         }
         .info-item {
-            background: #f5f5f5;
+            background: #f9fafb;
             padding: 15px;
             border-radius: 8px;
-            border-left: 4px solid #8d6e63;
+            border-left: 4px solid #8b5a2b;
         }
         .info-label {
             font-weight: 600;
-            color: #5d4037;
+            color: #8b5a2b;
             margin-bottom: 5px;
         }
         .info-value {
-            color: #2c3e50;
+            color: #1e3a8a;
             word-break: break-all;
         }
         .geo-section {
-            background: linear-gradient(135deg, #8d6e63 0%, #5d4037 100%);
+            background: linear-gradient(135deg, #1e3a8a 0%, #8b5a2b 100%);
             color: white;
             border-radius: 8px;
             padding: 20px;
@@ -285,7 +285,7 @@ function generateHTML(data) {
         .geo-section h3 { margin-bottom: 15px; }
         .timestamp {
             text-align: center;
-            color: #6d7278;
+            color: #6b7280;
             font-size: 0.9em;
             margin-top: 20px;
         }
@@ -303,7 +303,7 @@ function generateHTML(data) {
             <div class="header">
                 <h1>🌐 Host Detail</h1>
                 <div class="ip-display">${ip || 'Unknown'}</div>
-                ${reverseLookup ? `<div style="color: #6d7278;">→ ${reverseLookup}</div>` : ''}
+                ${reverseLookup ? `<div style="color: #6b7280;">→ ${reverseLookup}</div>` : ''}
             </div>
 
             ${geolocation ? `
