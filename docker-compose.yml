@@ -32,7 +32,7 @@ services:
     environment:
       - NODE_ENV=production
       - LOG_LEVEL=info
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://hostdetail-redis:6379
       - SERVICE_VERSION=2.0.0
       - CACHE_TTL_DAYS=30
     ports:
@@ -50,7 +50,7 @@ services:
       - hostdetail-network
 
   redis:
-    image: redis:7-alpine
+    image: redis:alpine
     container_name: hostdetail-redis
     restart: unless-stopped
     read_only: true

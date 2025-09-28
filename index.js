@@ -90,15 +90,11 @@ app.use(httpLogger);
 const redisClient = redis.createClient({
 	url: process.env.REDIS_URL || 'redis://localhost:6379',
 	socket: {
-		connectTimeout: 5000,
-		commandTimeout: 2000,
-		reconnectDelayOnFailover: 100,
-		reconnectDelayOnClusterDown: 100,
-		maxRetriesPerRequest: 3
+		connectTimeout: 10000,
+		commandTimeout: 5000,
+		reconnectDelayOnFailover: 500,
+		reconnectDelayOnClusterDown: 500
 	},
-	retryDelayOnFailover: 100,
-	retryDelayOnClusterDown: 100,
-	maxRetriesPerRequest: 3,
 	lazyConnect: true
 });
 
