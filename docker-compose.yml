@@ -21,11 +21,11 @@ services:
       resources:
         limits:
           memory: 128M
-          cpus: '0.25'
+          cpus: "0.25"
           pids: 200
         reservations:
           memory: 64M
-          cpus: '0.1'
+          cpus: "0.1"
     tmpfs:
       - /tmp:rw,nosuid,nodev,noexec,size=32m
       - /run:rw,nosuid,nodev,noexec,size=16m
@@ -41,7 +41,15 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "-H", "User-Agent: DockerHealthCheck", "http://127.0.0.1:3000/health"]
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "-H",
+          "User-Agent: DockerHealthCheck",
+          "http://127.0.0.1:3000/health",
+        ]
       interval: 20s
       timeout: 3s
       retries: 3
@@ -53,37 +61,6 @@ services:
     image: redis:alpine
     container_name: hostdetail-redis
     restart: unless-stopped
-    read_only: true
-    user: "999:1000"
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    cap_add:
-      - SETGID
-      - SETUID
-    deploy:
-      resources:
-        limits:
-          memory: 64M
-          cpus: '0.1'
-          pids: 100
-        reservations:
-          memory: 32M
-          cpus: '0.05'
-    sysctls:
-      - net.core.somaxconn=1024
-    tmpfs:
-      - /tmp:rw,nosuid,nodev,noexec,size=16m
-    volumes:
-      - redis-data:/data:rw
-      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
-    command: >
-      sh -c '
-        mkdir -p /data &&
-        chown redis:redis /data &&
-        redis-server /usr/local/etc/redis/redis.conf
-      '
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -92,10 +69,6 @@ services:
       start_period: 5s
     networks:
       - hostdetail-network
-
-volumes:
-  redis-data:
-    driver: local
 
 networks:
   hostdetail-network:
