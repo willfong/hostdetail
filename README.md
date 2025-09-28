@@ -120,6 +120,10 @@ docker buildx build --platform linux/amd64,linux/arm64 -t wfong/hostdetail:lates
 
 ## Monitoring & Observability
 
+### Complete Monitoring Pipeline
+
+This application implements a production-ready monitoring stack: **Pino → Docker Logs → Promtail → Loki → Grafana**
+
 ### Structured Logging
 
 The application uses **Pino** for high-performance structured JSON logging, optimized for Docker, Promtail, Loki, and Grafana integration.
@@ -223,6 +227,219 @@ count by (userAgent) ({service="hostdetail"} | json | event="user_agent_tracking
 {service="hostdetail"} | json | event="periodic_metrics" | unwrap metrics_memory_heapUsed
 ```
 
+### Setting Up the Complete Monitoring Pipeline
+
+#### 1. Docker Logs Collection
+The application outputs structured JSON logs via Pino, which Docker automatically collects:
+
+```bash
+# View live logs
+docker-compose logs -f hostdetail
+
+# Check log format
+docker-compose logs hostdetail | head -5
+```
+
+#### 2. Promtail Configuration
+Create `promtail-config.yml` to ship logs to Loki:
+
+```yaml
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: hostdetail
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: 'hostdetail'
+        action: keep
+      - source_labels: ['__meta_docker_container_name']
+        target_label: 'container'
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: 'stream'
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            time: time
+            event: event
+            service: service
+            environment: environment
+            host: host
+            country: country
+            countryCode: countryCode
+            clientIp: clientIp
+            responseTimeMs: responseTimeMs
+            cacheType: cacheType
+            apiProvider: apiProvider
+      - labels:
+          level:
+          event:
+          service:
+          environment:
+          country:
+          cacheType:
+          apiProvider:
+      - timestamp:
+          source: time
+          format: RFC3339
+```
+
+#### 3. Loki Configuration
+Create `loki-config.yml`:
+
+```yaml
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+ingester:
+  lifecycler:
+    address: 127.0.0.1
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+    final_sleep: 0s
+  chunk_idle_period: 5m
+  chunk_retain_period: 30s
+  max_transfer_retries: 0
+
+schema_config:
+  configs:
+    - from: 2021-01-01
+      store: boltdb
+      object_store: filesystem
+      schema: v11
+      index:
+        prefix: index_
+        period: 168h
+
+storage_config:
+  boltdb:
+    directory: /loki/index
+  filesystem:
+    directory: /loki/chunks
+
+limits_config:
+  enforce_metric_name: false
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+
+chunk_store_config:
+  max_look_back_period: 0s
+
+table_manager:
+  retention_deletes_enabled: false
+  retention_period: 0s
+```
+
+#### 4. Complete Docker Compose with Monitoring Stack
+
+Add to your `docker-compose.yml`:
+
+```yaml
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    networks:
+      - hostdetail-network
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: promtail
+    restart: unless-stopped
+    volumes:
+      - /var/log:/var/log:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./promtail-config.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - hostdetail-network
+
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=your_secure_password
+    volumes:
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - loki
+    networks:
+      - hostdetail-network
+
+volumes:
+  loki-data:
+  grafana-data:
+```
+
+#### 5. Grafana Dashboard Setup
+
+1. **Add Loki Data Source**: Navigate to Data Sources → Add data source → Loki
+   - URL: `http://loki:3100`
+   - Access: Server (default)
+
+2. **Import Dashboard**: Use the JSON configuration below or create panels with these queries
+
+#### 6. Essential Grafana Panels
+
+**Request Rate Panel**:
+```logql
+rate({service="hostdetail"} | json | __error__="" | event="request_performance" [5m])
+```
+
+**Error Rate Panel**:
+```logql
+rate({service="hostdetail"} | json | level="error" [5m]) / rate({service="hostdetail"} | json [5m])
+```
+
+**Response Time Percentiles**:
+```logql
+quantile_over_time(0.95, {service="hostdetail"} | json | event="request_performance" | unwrap responseTimeMs [5m])
+```
+
+**Geographic Request Distribution**:
+```logql
+count by (country) ({service="hostdetail"} | json | event="country_metrics" | country != "")
+```
+
+**Cache Hit Rate**:
+```logql
+rate({service="hostdetail"} | json | event="cache_hit" [5m]) / rate({service="hostdetail"} | json | event=~"cache_(hit|miss)" [5m]) * 100
+```
+
+**External API Performance**:
+```logql
+{service="hostdetail"} | json | event="third_party_api_success" | unwrap requestDurationMs
+```
+
+**DNS Lookup Performance**:
+```logql
+{service="hostdetail"} | json | event="dns_lookup_success" | unwrap lookupTimeMs
+```
+
 ### Health Monitoring
 
 The application includes comprehensive health monitoring:
@@ -233,6 +450,30 @@ The application includes comprehensive health monitoring:
 - **Performance monitoring** for DNS lookups, geolocation API calls, and request processing
 - **Geographic analytics** with country/region/city distribution tracking
 - **3rd party API monitoring** with timeout handling (2s) and failure logging
+
+### Alerting Rules (Optional)
+
+Create alerts in Grafana for:
+
+**High Error Rate**:
+```logql
+rate({service="hostdetail"} | json | level="error" [5m]) > 0.1
+```
+
+**High Response Time**:
+```logql
+quantile_over_time(0.95, {service="hostdetail"} | json | event="request_performance" | unwrap responseTimeMs [5m]) > 1000
+```
+
+**Cache Miss Rate Too High**:
+```logql
+rate({service="hostdetail"} | json | event="cache_miss" [5m]) / rate({service="hostdetail"} | json | event=~"cache_(hit|miss)" [5m]) > 0.5
+```
+
+**External API Failures**:
+```logql
+rate({service="hostdetail"} | json | event=~"third_party_api_(error|timeout|failure)" [5m]) > 0.1
+```
 
 ## AWS ECS Deployment
 
