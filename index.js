@@ -123,7 +123,8 @@ redisClient.connect().catch(err => {
 // Cache configuration - configurable via environment variables
 const CACHE_TTL = {
 	DNS: parseInt(process.env.CACHE_TTL_DAYS || '30') * 24 * 60 * 60, // Default 30 days for DNS
-	GEO: parseInt(process.env.CACHE_TTL_DAYS || '30') * 24 * 60 * 60  // Default 30 days for geolocation
+	GEO: parseInt(process.env.CACHE_TTL_DAYS || '30') * 24 * 60 * 60,  // Default 30 days for geolocation
+	NEGATIVE: parseInt(process.env.CACHE_NEGATIVE_TTL_HOURS || '24') * 60 * 60 // Default 24 hours for failed lookups
 };
 
 // Helper function to safely interact with Redis
@@ -272,7 +273,7 @@ function generateHTML(data) {
             word-break: break-all;
         }
         .geo-section {
-            background: linear-gradient(135deg, #1e3a8a 0%, #8b5a2b 100%);
+            background: linear-gradient(135deg, #8b5a2b 0%, #6b7280 100%);
             color: white;
             border-radius: 8px;
             padding: 20px;
@@ -657,13 +658,16 @@ async function reverseDnsWithCache(ip) {
 	if (cached) {
 		try {
 			const result = JSON.parse(cached);
+			// Check if this is a cached failure (null result)
+			const isFailure = result === null;
 			logger.info({
 				event: 'cache_hit',
 				cacheType: 'dns',
 				clientIp: ip,
 				cacheKey,
-				result
-			}, 'DNS cache hit');
+				result,
+				isNegativeCache: isFailure
+			}, isFailure ? 'DNS negative cache hit' : 'DNS cache hit');
 			return result;
 		} catch (err) {
 			logger.warn({
@@ -683,21 +687,35 @@ async function reverseDnsWithCache(ip) {
 		cacheKey
 	}, 'DNS cache miss - performing lookup');
 
-	const result = await reverseDns(ip);
-	if (result) {
-		const cached = await setCache(cacheKey, result, CACHE_TTL.DNS);
+	try {
+		const result = await reverseDns(ip);
+		if (result) {
+			const cached = await setCache(cacheKey, result, CACHE_TTL.DNS);
+			logger.info({
+				event: 'cache_set',
+				cacheType: 'dns',
+				clientIp: ip,
+				cacheKey,
+				result,
+				ttl: CACHE_TTL.DNS,
+				cached
+			}, 'DNS result cached');
+		}
+		return result;
+	} catch (error) {
+		// Cache the failure with shorter TTL
+		const cached = await setCache(cacheKey, null, CACHE_TTL.NEGATIVE);
 		logger.info({
-			event: 'cache_set',
+			event: 'negative_cache_set',
 			cacheType: 'dns',
 			clientIp: ip,
 			cacheKey,
-			result,
-			ttl: CACHE_TTL.DNS,
+			error: error.message,
+			ttl: CACHE_TTL.NEGATIVE,
 			cached
-		}, 'DNS result cached');
+		}, 'DNS failure cached');
+		throw error;
 	}
-
-	return result;
 }
 
 // Cached version of geolocation lookup
@@ -709,16 +727,19 @@ async function getGeolocationWithCache(ip) {
 	if (cached) {
 		try {
 			const result = JSON.parse(cached);
+			// Check if this is a cached failure (null result)
+			const isFailure = result === null;
 			logger.info({
 				event: 'cache_hit',
 				cacheType: 'geolocation',
 				clientIp: ip,
 				cacheKey,
-				country: result.country,
-				countryCode: result.countryCode,
-				region: result.regionName,
-				city: result.city
-			}, 'Geolocation cache hit');
+				country: result?.country,
+				countryCode: result?.countryCode,
+				region: result?.regionName,
+				city: result?.city,
+				isNegativeCache: isFailure
+			}, isFailure ? 'Geolocation negative cache hit' : 'Geolocation cache hit');
 			return result;
 		} catch (err) {
 			logger.warn({
@@ -738,24 +759,38 @@ async function getGeolocationWithCache(ip) {
 		cacheKey
 	}, 'Geolocation cache miss - performing API request');
 
-	const result = await getGeolocation(ip);
-	if (result) {
-		const cached = await setCache(cacheKey, result, CACHE_TTL.GEO);
+	try {
+		const result = await getGeolocation(ip);
+		if (result) {
+			const cached = await setCache(cacheKey, result, CACHE_TTL.GEO);
+			logger.info({
+				event: 'cache_set',
+				cacheType: 'geolocation',
+				clientIp: ip,
+				cacheKey,
+				country: result.country,
+				countryCode: result.countryCode,
+				region: result.regionName,
+				city: result.city,
+				ttl: CACHE_TTL.GEO,
+				cached
+			}, 'Geolocation result cached');
+		}
+		return result;
+	} catch (error) {
+		// Cache the failure with shorter TTL
+		const cached = await setCache(cacheKey, null, CACHE_TTL.NEGATIVE);
 		logger.info({
-			event: 'cache_set',
+			event: 'negative_cache_set',
 			cacheType: 'geolocation',
 			clientIp: ip,
 			cacheKey,
-			country: result.country,
-			countryCode: result.countryCode,
-			region: result.regionName,
-			city: result.city,
-			ttl: CACHE_TTL.GEO,
+			error: error.message,
+			ttl: CACHE_TTL.NEGATIVE,
 			cached
-		}, 'Geolocation result cached');
+		}, 'Geolocation failure cached');
+		throw error;
 	}
-
-	return result;
 }
 
 async function getGeolocation(ip) {

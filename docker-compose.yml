@@ -35,6 +35,7 @@ services:
       - REDIS_URL=redis://hostdetail-redis:6379
       - SERVICE_VERSION=2.0.0
       - CACHE_TTL_DAYS=30
+      - CACHE_NEGATIVE_TTL_HOURS=24
     ports:
       - "127.0.0.1:5004:3000"
     depends_on:
